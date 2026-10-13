@@ -5,7 +5,7 @@
 
 ### Features
 
-* **codecov:** leave code marked with `[@code](https://github.com/code)CoverageIgnore` out of coverage ([2e97ad3](https://github.com/php-testo/testo/commit/2e97ad364f41afa2d982f54aba9a2b9d891e04e9)), closes [#392](https://github.com/php-testo/testo/issues/392)
+* **codecov:** leave code marked with `@codeCoverageIgnore` out of coverage ([2e97ad3](https://github.com/php-testo/testo/commit/2e97ad364f41afa2d982f54aba9a2b9d891e04e9)), closes [#392](https://github.com/php-testo/testo/issues/392)
 
 
 ### Bug Fixes
