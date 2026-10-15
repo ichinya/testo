@@ -146,10 +146,10 @@ final class ExpectExceptionToTestoRector extends AbstractRector
             );
 
             # Collect sibling modifiers, retaining intervening assignments in their source order.
+            $start = $i;
             $modifiers = [];
             $pending = [];
             $hasAssignments = false;
-            $hasMessage = false;
             $hasPattern = false;
             $messageCount = 0;
             $literalMessage = false;
@@ -160,7 +160,6 @@ final class ExpectExceptionToTestoRector extends AbstractRector
                     $hasAssignments = $hasAssignments || $pending !== [];
                     \array_push($modifiers, ...$pending);
                     $modifiers[] = [$next, $modifier];
-                    $hasMessage = $hasMessage || $modifier[0] === 'message';
                     $hasPattern = $hasPattern || $modifier[0] === 'withMessageMatchingRegex';
                     $messageCount += (int) ($modifier[0] === 'message');
                     $literalMessage = $literalMessage || ($modifier[0] === 'message' && $modifier[1] instanceof String_);
@@ -177,24 +176,18 @@ final class ExpectExceptionToTestoRector extends AbstractRector
             }
 
             \assert($stmt instanceof Expression);
-            if ($hasMessage && $hasPattern && ($messageCount !== 1 || !$literalMessage)) {
+            if ($messageCount > 0 && $hasPattern && ($messageCount !== 1 || !$literalMessage)) {
                 # There is only one replaceable regex slot in Testo. Do not conflate PHPUnit's
                 # independent fields, or register a second handler that could consume a failure
                 # from the first when the expected class is Throwable/Exception.
-                $result[] = $stmt;
-                foreach ($modifiers as $modifier) {
-                    $result[] = \is_array($modifier) ? $modifier[0] : $modifier;
-                }
+                \array_push($result, ...\array_slice($stmts, $start, $i - $start + 1));
                 continue;
             }
             if ($hasAssignments) {
                 # Keep registration and every argument evaluation at its original statement.
                 $expectation = $this->temporaryName($node);
                 if ($expectation === null) {
-                    $result[] = $stmt;
-                    foreach ($modifiers as $modifier) {
-                        $result[] = \is_array($modifier) ? $modifier[0] : $modifier;
-                    }
+                    \array_push($result, ...\array_slice($stmts, $start, $i - $start + 1));
                     continue;
                 }
 
