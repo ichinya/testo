@@ -18,8 +18,9 @@ class FoldAcrossAssignmentTest
 {
     public function testInitWithWrongType(): void
     {
+        $testoExpectedException = \Testo\Expect::exception(\InvalidArgumentException::class);
         $message = 'Type "float" is not supported. The valid types are: ' . self::TYPES . '.';
-        \Testo\Expect::exception(\InvalidArgumentException::class)->withMessageContaining($message);
+        $testoExpectedException->withMessageMatchingRegex((static fn(string $message): string => $message === '' ? '~\A\z~' : '~' . \preg_quote($message, '~') . '~')($message));
 
         new Compare(type: 'float');
     }

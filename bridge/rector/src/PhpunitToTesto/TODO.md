@@ -43,17 +43,16 @@ Mocks are out of this set: they convert through `phpunit-to-double` or `phpunit-
   `#[\Override]` and only gains the `#[\Testo\Test]` marks, as do the non-abstract test methods of a trait. **Residual:** methods are NOT renamed —
   Testo discovers by attribute, so keeping `testFoo()` is harmless, and prefix cleanup / call-site
   rewriting is left manual.
-- **ExpectExceptionToTestoRector** (registered) — now folds the fluent chain, not just the bare
-  head. It operates at the statements level (matches the enclosing `StmtsAwareInterface` node and
-  rewrites its `->stmts`): after a `$this->expectException($c)` statement it absorbs the
-  following sibling `expectExceptionMessage($m)` /
-  `expectExceptionMessageMatches($re)` / `expectExceptionCode($n)` statements into
-  `\Testo\Expect::exception($c)->withMessageContaining($m)->withMessageMatchingRegex($re)->withCode($n)`
-  and removes them. PHPUnit's `expectExceptionMessage()` matches a substring, hence
-  `withMessageContaining()` rather than the exact `withMessage()`. Conservative: only assignments that
-  cannot throw (`$message = '…';`) may stand between the calls, and the chain takes the place of the
-  last absorbed one after them; any other statement ends the run,
-  and a bare `expectExceptionMessage`/`Code` with no preceding `expectException` is left untouched.
+- **ExpectExceptionToTestoRector** (registered) — folds sibling class/message/regex/code
+  expectations while preserving argument evaluation order and last-wins messages/codes. A single
+  nonempty literal uses `withMessageContaining()`, an empty literal uses exact `withMessage('')`,
+  and dynamic/repeated messages use a quoted, replaceable regex (exact-empty for `''`). Named source
+  parameters are validated and emitted positionally. Across assignments a fresh local holds the
+  handler, keeping registration and argument snapshots at the original statements. Other statements
+  end the run. A single literal message and an independent regex both convert; a dynamic/repeated
+  message plus an independent regex stays **entirely unchanged for manual migration**, since Testo
+  has only one replaceable regex slot. Variable variables also prevent introducing a handler local.
+  A bare message/code with no preceding class expectation remains manual.
 - **GroupToTestoRector** (registered) — collapses every PHPUnit group source on a node — the
   `@group` docblock annotation(s) **and** the repeatable single-name `#[Group]` attribute(s) — into
   one variadic `#[\Testo\Filter\Group('a', 'b', …)]` (Testo's `Group` is variadic but not
