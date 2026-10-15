@@ -42,7 +42,7 @@ final class ExceptionExpectationRuntimeTest
         }
 
         $totals = $result->summary;
-        Assert::same([$totals->total(), $totals->metric('assertions'), $totals->count(Status::Passed), $totals->count(Status::Failed)], [12, 14, 9, 3]);
+        Assert::same([$totals->total(), $totals->metric('assertions'), $totals->count(Status::Passed), $totals->count(Status::Failed)], [19, 21, 14, 5]);
         $failures = [];
         $assertions = [];
         foreach ($result as $suite) {
@@ -59,6 +59,8 @@ final class ExceptionExpectationRuntimeTest
             'ExceptionRuntimeContracts::emptyMustFail',
             'ExceptionRuntimeContracts::dynamicEmptyMustFail',
             'ExceptionRuntimeContracts::independentPatternMustFail',
+            'ExceptionRuntimeContracts::longMessageMustFail',
+            'ExceptionRuntimeContracts::repeatedMessageAndPatternMustFail',
         ]);
         Assert::same($assertions['evaluationOrder'], 2);
         Assert::same($assertions['independentPattern'], 1);

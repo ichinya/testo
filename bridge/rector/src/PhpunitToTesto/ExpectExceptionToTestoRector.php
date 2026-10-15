@@ -6,6 +6,7 @@ namespace Testo\Bridge\Rector\PhpunitToTesto;
 
 use PhpParser\Node;
 use PhpParser\Node\Arg;
+use PhpParser\Node\ArrayItem;
 use PhpParser\Node\Expr;
 use PhpParser\Node\Expr\Array_;
 use PhpParser\Node\Expr\ArrowFunction;
@@ -17,7 +18,6 @@ use PhpParser\Node\Expr\ConstFetch;
 use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\StaticCall;
-use PhpParser\Node\Expr\Ternary;
 use PhpParser\Node\Expr\Variable;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
@@ -45,7 +45,7 @@ use Testo\Bridge\Rector\Testing\TestRectorFixtures;
  * chained modifier and removed:
  *   - a single nonempty literal message => `->withMessageContaining($m)`;
  *   - an empty literal message => `->withMessage('')`;
- *   - repeated or dynamic messages => a quoted, replaceable `->withMessageMatchingRegex()`;
+ *   - repeated or dynamic messages => replaceable `->withMessage($m, exact: $m === '')`;
  *   - `expectExceptionMessageMatches($re)` => `->withMessageMatchingRegex($re)`;
  *   - `expectExceptionCode($n)` => `->withCode($n)`.
  *
@@ -60,14 +60,12 @@ use Testo\Bridge\Rector\Testing\TestRectorFixtures;
  * {@see StmtsAwareInterface} node and rewrites its `->stmts`.
  *
  * Arguments keep their evaluation order, including overwritten expectations. A typed closure
- * converts a dynamic message to a literal substring pattern (exact-empty for an empty value).
+ * chooses exact-empty or substring mode after evaluating a dynamic message once.
  * Named source arguments are validated and emitted positionally. Across assignments, a fresh local
  * holds the handler so registration and argument snapshots stay at their original statements.
  * Any other statement ends the run. A bare message/code with no preceding class is left untouched.
  *
- * PHPUnit has independent message and regex fields. A single literal message can coexist with
- * a regex in Testo; a dynamic/repeated message plus an independent regex cannot share Testo's one
- * replaceable regex field and the whole run is left for manual migration.
+ * Message and regex expectations remain independent, as in PHPUnit.
  *
  * Only folds inside a class: the expectations belong to a test method, so a run in a free function
  * or at namespace level is left untouched.
@@ -150,9 +148,7 @@ final class ExpectExceptionToTestoRector extends AbstractRector
             $modifiers = [];
             $pending = [];
             $hasAssignments = false;
-            $hasPattern = false;
             $messageCount = 0;
-            $literalMessage = false;
             for ($j = $i + 1; $j < $count; ++$j) {
                 $next = $stmts[$j];
                 $modifier = $next instanceof Expression ? $this->matchModifier($next) : null;
@@ -160,9 +156,7 @@ final class ExpectExceptionToTestoRector extends AbstractRector
                     $hasAssignments = $hasAssignments || $pending !== [];
                     \array_push($modifiers, ...$pending);
                     $modifiers[] = [$next, $modifier];
-                    $hasPattern = $hasPattern || $modifier[0] === 'withMessageMatchingRegex';
                     $messageCount += (int) ($modifier[0] === 'message');
-                    $literalMessage = $literalMessage || ($modifier[0] === 'message' && $modifier[1] instanceof String_);
                     $pending = [];
                     $i = $j;
                     continue;
@@ -176,13 +170,6 @@ final class ExpectExceptionToTestoRector extends AbstractRector
             }
 
             \assert($stmt instanceof Expression);
-            if ($messageCount > 0 && $hasPattern && ($messageCount !== 1 || !$literalMessage)) {
-                # There is only one replaceable regex slot in Testo. Do not conflate PHPUnit's
-                # independent fields, or register a second handler that could consume a failure
-                # from the first when the expected class is Throwable/Exception.
-                \array_push($result, ...\array_slice($stmts, $start, $i - $start + 1));
-                continue;
-            }
             if ($hasAssignments) {
                 # Keep registration and every argument evaluation at its original statement.
                 $expectation = $this->temporaryName($node);
@@ -293,38 +280,34 @@ final class ExpectExceptionToTestoRector extends AbstractRector
 
     private function modifier(Expr $receiver, string $method, Expr $value, int $messageCount): MethodCall
     {
+        $arguments = [new Arg($value)];
         if ($method === 'message') {
             if ($messageCount === 1 && $value instanceof String_) {
                 $method = $value->value === '' ? 'withMessage' : 'withMessageContaining';
             } else {
-                $method = 'withMessageMatchingRegex';
-                $value = $this->messagePattern($value);
+                $method = 'withMessage';
+                $arguments = $value instanceof String_
+                    ? [new Arg($value), new Arg(new ConstFetch(new Name($value->value === '' ? 'true' : 'false')), name: new Identifier('exact'))]
+                    : [$this->messageArguments($value)];
             }
         }
-        return new MethodCall($receiver, new Identifier($method), [new Arg($value)]);
+        return new MethodCall($receiver, new Identifier($method), $arguments);
     }
 
-    private function messagePattern(Expr $message): Expr
+    private function messageArguments(Expr $message): Arg
     {
-        if ($message instanceof String_) {
-            return new String_($message->value === '' ? '~\\A\\z~' : '~' . \preg_quote($message->value, '~') . '~');
-        }
-
         # A typed closure keeps PHPUnit's string parameter boundary (weak/strict caller coercion)
         # and evaluates the original expression only once, including an overwritten expectation.
         $value = new Variable('message');
-        return new FuncCall(new ArrowFunction([
+        return new Arg(new FuncCall(new ArrowFunction([
             'static' => true,
             'params' => [new Param($value, type: new Identifier('string'))],
-            'returnType' => new Identifier('string'),
-            'expr' => new Ternary(
-                new Identical($value, new String_('')),
-                new String_('~\\A\\z~'),
-                new Concat(new Concat(new String_('~'), new FuncCall(new FullyQualified('preg_quote'), [
-                    new Arg($value), new Arg(new String_('~')),
-                ])), new String_('~')),
-            ),
-        ]), [new Arg($message)]);
+            'returnType' => new Identifier('array'),
+            'expr' => new Array_([
+                new ArrayItem($value),
+                new ArrayItem(new Identical($value, new String_(''))),
+            ]),
+        ]), [new Arg($message)]), unpack: true);
     }
 
     private function temporaryName(Node $node): ?Variable

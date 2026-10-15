@@ -46,12 +46,12 @@ Mocks are out of this set: they convert through `phpunit-to-double` or `phpunit-
 - **ExpectExceptionToTestoRector** (registered) — folds sibling class/message/regex/code
   expectations while preserving argument evaluation order and last-wins messages/codes. A single
   nonempty literal uses `withMessageContaining()`, an empty literal uses exact `withMessage('')`,
-  and dynamic/repeated messages use a quoted, replaceable regex (exact-empty for `''`). Named source
+  and dynamic/repeated messages use replaceable `withMessage($message, exact: $message === '')`
+  without regex length limits. A typed closure evaluates each dynamic argument once. Named source
   parameters are validated and emitted positionally. Across assignments a fresh local holds the
   handler, keeping registration and argument snapshots at the original statements. Other statements
-  end the run. A single literal message and an independent regex both convert; a dynamic/repeated
-  message plus an independent regex stays **entirely unchanged for manual migration**, since Testo
-  has only one replaceable regex slot. Variable variables also prevent introducing a handler local.
+  end the run. Message and regex expectations retain independent fields, including dynamic and
+  repeated messages. Variable variables prevent introducing a handler local.
   A bare message/code with no preceding class expectation remains manual.
 - **GroupToTestoRector** (registered) — collapses every PHPUnit group source on a node — the
   `@group` docblock annotation(s) **and** the repeatable single-name `#[Group]` attribute(s) — into
