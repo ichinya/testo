@@ -107,14 +107,6 @@ final class ExceptionRuntimeContracts
         throw new \RuntimeException('two');
     }
 
-    public function longDynamicMessage(): void
-    {
-        $message = str_repeat('a', 100000);
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage($message);
-        throw new \RuntimeException('prefix ' . $message . ' suffix');
-    }
-
     public function longRepeatedMessage(): void
     {
         $message = str_repeat('a', 100000);
@@ -124,12 +116,12 @@ final class ExceptionRuntimeContracts
         throw new \RuntimeException('prefix ' . $message . ' suffix');
     }
 
-    public function longMessageMustFail(): void
+    public function substringMismatchMustFail(): void
     {
-        $message = str_repeat('a', 100000);
+        $message = 'needle';
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage($message);
-        throw new \RuntimeException(str_repeat('a', 99999));
+        throw new \RuntimeException('needl');
     }
 
     public function lastEmptyWins(): void
@@ -166,6 +158,65 @@ final class ExceptionRuntimeContracts
         throw new \RuntimeException('two');
     }
 
+    public function conditionalLocalSurvives(): void
+    {
+        if ($this->condition()) {
+            $testoExpectedException = 'source';
+        }
+        if ($this->condition()) {
+            $this->expectException(\RuntimeException::class);
+            $message = 'two';
+            $this->expectExceptionMessage($message);
+        }
+        \Testo\Assert::same($testoExpectedException, 'source');
+        throw new \RuntimeException('two');
+    }
+
+    public function laterLocalSurvives(): void
+    {
+        if ($this->condition()) {
+            $this->expectException(\RuntimeException::class);
+            $message = 'two';
+            $this->expectExceptionMessage($message);
+        }
+        $testoExpectedException ??= 'source';
+        \Testo\Assert::same($testoExpectedException, 'source');
+        throw new \RuntimeException('two');
+    }
+
+    public function assignmentCanThrow(): void
+    {
+        $part = new class {
+            public function __toString(): string
+            {
+                throw new \RuntimeException('assignment');
+            }
+        };
+        $this->expectException(\RuntimeException::class);
+        $message = 'prefix ' . $part;
+        $this->expectExceptionMessage($message);
+    }
+
+    public function weakFalseMustFail(): void
+    {
+        $message = false;
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage($message);
+        throw new \RuntimeException('nonempty');
+    }
+
+    public function overwrittenMessageMustFail(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('expected');
+        $this->expectExceptionMessage($this->throwOne());
+    }
+
+    private function condition(): bool
+    {
+        return true;
+    }
+
     private function mark(string $value): string
     {
         $this->trace[] = $value;
@@ -199,7 +250,7 @@ final class ExceptionRuntimeContracts
 
     public function lastMessageWins(): void
     {
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage('one', exact: false)->withMessage('two', exact: false);
+        \Testo\Expect::exception(\RuntimeException::class)->withMessageContaining('two');
         throw new \RuntimeException('two');
     }
 
@@ -211,27 +262,27 @@ final class ExceptionRuntimeContracts
 
     public function literalRegexCharacters(): void
     {
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage('old', exact: false)->withMessage('~.[x]+$\\', exact: false);
+        \Testo\Expect::exception(\RuntimeException::class)->withMessageContaining('~.[x]+$\\');
         throw new \RuntimeException('prefix ~.[x]+$\\ suffix');
     }
 
     public function dynamicEmptyMustFail(): void
     {
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->mark('')));
+        \Testo\Expect::exception(\RuntimeException::class)->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->mark('')));
         throw new \RuntimeException('nonempty');
     }
 
     public function evaluationOrder(): void
     {
         $this->trace = [];
-        \Testo\Expect::exception($this->mark(\RuntimeException::class))->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->mark('one')))->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->mark('two')))->withCode(1)->withCode(2);
+        \Testo\Expect::exception($this->mark(\RuntimeException::class))->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->mark('one')))->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->mark('two')))->withCode(1)->withCode(2);
         \Testo\Assert::same($this->trace, [\RuntimeException::class, 'one', 'two']);
         throw new \RuntimeException('two', 2);
     }
 
     public function overwrittenArgumentThrows(): void
     {
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage('one', exact: false)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->throwOne()));
+        \Testo\Expect::exception(\RuntimeException::class)->withMessage('one', exact: false)->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->throwOne()));
     }
 
     public function independentPattern(): void
@@ -251,10 +302,10 @@ final class ExceptionRuntimeContracts
         $class = \RuntimeException::class;
         $message = 'one';
         $testoExpectedException = \Testo\Expect::exception($class);
-        $testoExpectedException->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
+        $testoExpectedException->withMessage($message, exact: false);
         $class = \LogicException::class;
         $message = 'two';
-        $testoExpectedException->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
+        $testoExpectedException->withMessage($message, exact: false);
         throw new \RuntimeException('two');
     }
 
@@ -263,55 +314,104 @@ final class ExceptionRuntimeContracts
         $testoExpectedException = 'source';
         $testoExpectedException2 = \Testo\Expect::exception(\RuntimeException::class);
         $message = 'two';
-        $testoExpectedException2->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
+        $testoExpectedException2->withMessageContaining($message);
         \Testo\Assert::same($testoExpectedException, 'source');
         throw new \RuntimeException('two');
-    }
-
-    public function longDynamicMessage(): void
-    {
-        $message = str_repeat('a', 100000);
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
-        throw new \RuntimeException('prefix ' . $message . ' suffix');
     }
 
     public function longRepeatedMessage(): void
     {
         $message = str_repeat('a', 100000);
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage('old', exact: false)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
+        \Testo\Expect::exception(\RuntimeException::class)->withMessage('old', exact: false)->withMessage($message, exact: false);
         throw new \RuntimeException('prefix ' . $message . ' suffix');
     }
 
-    public function longMessageMustFail(): void
+    public function substringMismatchMustFail(): void
     {
-        $message = str_repeat('a', 100000);
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
-        throw new \RuntimeException(str_repeat('a', 99999));
+        $message = 'needle';
+        \Testo\Expect::exception(\RuntimeException::class)->withMessageContaining($message);
+        throw new \RuntimeException('needl');
     }
 
     public function lastEmptyWins(): void
     {
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage('old', exact: false)->withMessage('', exact: true);
+        \Testo\Expect::exception(\RuntimeException::class)->withMessage('');
         throw new \RuntimeException('');
     }
 
     public function lastNonemptyWins(): void
     {
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage('', exact: true)->withMessage('new', exact: false);
+        \Testo\Expect::exception(\RuntimeException::class)->withMessageContaining('new');
         throw new \RuntimeException('prefix new suffix');
     }
 
     public function dynamicMessageAndPattern(): void
     {
         $message = 'two';
-        \Testo\Expect::exception(\RuntimeException::class)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message))->withMessageMatchingRegex('~^two$~');
+        \Testo\Expect::exception(\RuntimeException::class)->withMessageContaining($message)->withMessageMatchingRegex('~^two$~');
         throw new \RuntimeException('two');
     }
 
     public function repeatedMessageAndPatternMustFail(): void
     {
-        \Testo\Expect::exception(\Throwable::class)->withMessage('old', exact: false)->withMessageMatchingRegex('~^three$~')->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->mark('two')));
+        \Testo\Expect::exception(\Throwable::class)->withMessage('old', exact: false)->withMessageMatchingRegex('~^three$~')->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->mark('two')));
         throw new \RuntimeException('two');
+    }
+
+    public function conditionalLocalSurvives(): void
+    {
+        if ($this->condition()) {
+            $testoExpectedException = 'source';
+        }
+        if ($this->condition()) {
+            $testoExpectedException2 = \Testo\Expect::exception(\RuntimeException::class);
+            $message = 'two';
+            $testoExpectedException2->withMessageContaining($message);
+        }
+        \Testo\Assert::same($testoExpectedException, 'source');
+        throw new \RuntimeException('two');
+    }
+
+    public function laterLocalSurvives(): void
+    {
+        if ($this->condition()) {
+            $testoExpectedException2 = \Testo\Expect::exception(\RuntimeException::class);
+            $message = 'two';
+            $testoExpectedException2->withMessageContaining($message);
+        }
+        $testoExpectedException ??= 'source';
+        \Testo\Assert::same($testoExpectedException, 'source');
+        throw new \RuntimeException('two');
+    }
+
+    public function assignmentCanThrow(): void
+    {
+        $part = new class {
+            public function __toString(): string
+            {
+                throw new \RuntimeException('assignment');
+            }
+        };
+        $testoExpectedException = \Testo\Expect::exception(\RuntimeException::class);
+        $message = 'prefix ' . $part;
+        $testoExpectedException->withMessageContaining($message);
+    }
+
+    public function weakFalseMustFail(): void
+    {
+        $message = false;
+        \Testo\Expect::exception(\RuntimeException::class)->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($message));
+        throw new \RuntimeException('nonempty');
+    }
+
+    public function overwrittenMessageMustFail(): void
+    {
+        \Testo\Expect::exception(\RuntimeException::class)->withMessage('expected', exact: false)->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->throwOne()));
+    }
+
+    private function condition(): bool
+    {
+        return true;
     }
 
     private function mark(string $value): string

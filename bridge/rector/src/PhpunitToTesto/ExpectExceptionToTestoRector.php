@@ -19,6 +19,7 @@ use PhpParser\Node\Expr\FuncCall;
 use PhpParser\Node\Expr\MethodCall;
 use PhpParser\Node\Expr\StaticCall;
 use PhpParser\Node\Expr\Variable;
+use PhpParser\Node\FunctionLike;
 use PhpParser\Node\Identifier;
 use PhpParser\Node\Name;
 use PhpParser\Node\Name\FullyQualified;
@@ -43,9 +44,11 @@ use Testo\Bridge\Rector\Testing\TestRectorFixtures;
  * The head `$this->expectException($c)` (also `self::`/`static::`) becomes
  * `\Testo\Expect::exception($c)`, and each immediately-following sibling statement is absorbed as a
  * chained modifier and removed:
- *   - a single nonempty literal message => `->withMessageContaining($m)`;
+ *   - a single provably nonempty message => `->withMessageContaining($m)`;
  *   - an empty literal message => `->withMessage('')`;
- *   - repeated or dynamic messages => replaceable `->withMessage($m, exact: $m === '')`;
+ *   - a string variable => `->withMessage($m, exact: $m === '')`;
+ *   - retained repeated nonempty messages => `->withMessage($m, exact: false)`;
+ *   - other messages => `->withMessage(...(static fn(string $m): array => [$m, 'exact' => $m === ''])($expr))`;
  *   - `expectExceptionMessageMatches($re)` => `->withMessageMatchingRegex($re)`;
  *   - `expectExceptionCode($n)` => `->withCode($n)`.
  *
@@ -153,6 +156,16 @@ final class ExpectExceptionToTestoRector extends AbstractRector
                 $next = $stmts[$j];
                 $modifier = $next instanceof Expression ? $this->matchModifier($next) : null;
                 if ($modifier !== null) {
+                    $previous = $modifiers[\array_key_last($modifiers)] ?? null;
+                    if ($pending === [] && $modifier[0] === 'message' && $modifier[1] instanceof String_
+                        && \is_array($previous) && $previous[1][0] === 'message'
+                        && $previous[1][1] instanceof String_ && $previous[0]->getComments() === []
+                    ) {
+                        # Only adjacent literals: an intervening argument or assignment may throw
+                        # while the earlier message expectation is still active.
+                        \array_pop($modifiers);
+                        --$messageCount;
+                    }
                     $hasAssignments = $hasAssignments || $pending !== [];
                     \array_push($modifiers, ...$pending);
                     $modifiers[] = [$next, $modifier];
@@ -172,7 +185,7 @@ final class ExpectExceptionToTestoRector extends AbstractRector
             \assert($stmt instanceof Expression);
             if ($hasAssignments) {
                 # Keep registration and every argument evaluation at its original statement.
-                $expectation = $this->temporaryName($node);
+                $expectation = $this->temporaryName($node, $stmt);
                 if ($expectation === null) {
                     \array_push($result, ...\array_slice($stmts, $start, $i - $start + 1));
                     continue;
@@ -282,13 +295,23 @@ final class ExpectExceptionToTestoRector extends AbstractRector
     {
         $arguments = [new Arg($value)];
         if ($method === 'message') {
-            if ($messageCount === 1 && $value instanceof String_) {
-                $method = $value->value === '' ? 'withMessage' : 'withMessageContaining';
+            # Rector's type corrector removes non-empty-string accessories; keep PHPStan's proof.
+            $scope = $value->getAttribute(AttributeKey::SCOPE);
+            $type = $scope instanceof Scope ? $scope->getType($value) : $this->getType($value);
+            if ($messageCount === 1 && $type->isNonEmptyString()->yes()) {
+                $method = 'withMessageContaining';
             } else {
                 $method = 'withMessage';
-                $arguments = $value instanceof String_
-                    ? [new Arg($value), new Arg(new ConstFetch(new Name($value->value === '' ? 'true' : 'false')), name: new Identifier('exact'))]
-                    : [$this->messageArguments($value)];
+                if ($value instanceof String_) {
+                    $arguments = $value->value === '' ? [new Arg($value)]
+                        : [new Arg($value), new Arg(new ConstFetch(new Name('false')), name: new Identifier('exact'))];
+                } elseif ($type->isNonEmptyString()->yes()) {
+                    $arguments[] = new Arg(new ConstFetch(new Name('false')), name: new Identifier('exact'));
+                } elseif ($value instanceof Variable && \is_string($value->name) && $type->isString()->yes()) {
+                    $arguments[] = new Arg(new Identical($value, new String_('')), name: new Identifier('exact'));
+                } else {
+                    $arguments = [$this->messageArguments($value)];
+                }
             }
         }
         return new MethodCall($receiver, new Identifier($method), $arguments);
@@ -305,31 +328,45 @@ final class ExpectExceptionToTestoRector extends AbstractRector
             'returnType' => new Identifier('array'),
             'expr' => new Array_([
                 new ArrayItem($value),
-                new ArrayItem(new Identical($value, new String_(''))),
+                new ArrayItem(new Identical($value, new String_('')), new String_('exact')),
             ]),
         ]), [new Arg($message)]), unpack: true);
     }
 
-    private function temporaryName(Node $node): ?Variable
+    private function temporaryName(Node $node, Expression $statement): ?Variable
     {
+        # The method declaration's scope is outside the function, where every local is "maybe".
+        $scope = $statement->getAttribute(AttributeKey::SCOPE);
+        if ($scope instanceof Scope && $scope->canAnyVariableExist()) {
+            # After extract(), no local name can be proven fresh.
+            return null;
+        }
+        $finder = new NodeFinder();
+        # A nested statement block does not contain variables read or captured elsewhere
+        # in its function. Reserve those names too, including conditionally defined locals.
+        foreach ($finder->findInstanceOf($this->getFile()->getNewStmts(), FunctionLike::class) as $function) {
+            if ($function === $node || $finder->findFirst($function, static fn(Node $child): bool => $child === $node) !== null) {
+                $node = $function;
+                break;
+            }
+        }
         $used = [];
-        foreach ((new NodeFinder())->findInstanceOf($node, Variable::class) as $variable) {
+        foreach ($finder->findInstanceOf($node, Variable::class) as $variable) {
             if (!\is_string($variable->name)) {
                 return null;
             }
             $used[$variable->name] = true;
         }
-        $scope = $node->getAttribute(AttributeKey::SCOPE);
         $name = 'testoExpectedException';
-        for ($suffix = 2; isset($used[$name]) || ($scope instanceof Scope && $scope->hasVariableType($name)->yes()); ++$suffix) {
+        for ($suffix = 2; isset($used[$name]) || ($scope instanceof Scope && !$scope->hasVariableType($name)->no()); ++$suffix) {
             $name = 'testoExpectedException' . $suffix;
         }
         return new Variable($name);
     }
 
     /**
-     * Whether the statement assigns a value that cannot throw to a plain variable: a scalar, a
-     * constant, or a concatenation or array built from them and from variables.
+     * Whether the statement is an assignment we can retain between expectation calls.
+     * Constants and concatenations can throw, so registration must stay before the assignment.
      */
     private function isSafeAssignment(Node $stmt): bool
     {

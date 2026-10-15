@@ -45,13 +45,21 @@ Mocks are out of this set: they convert through `phpunit-to-double` or `phpunit-
   rewriting is left manual.
 - **ExpectExceptionToTestoRector** (registered) — folds sibling class/message/regex/code
   expectations while preserving argument evaluation order and last-wins messages/codes. A single
-  nonempty literal uses `withMessageContaining()`, an empty literal uses exact `withMessage('')`,
-  and dynamic/repeated messages use replaceable `withMessage($message, exact: $message === '')`
-  without regex length limits. A typed closure evaluates each dynamic argument once. Named source
-  parameters are validated and emitted positionally. Across assignments a fresh local holds the
+  provably nonempty message uses `withMessageContaining()`, and an empty literal uses `withMessage('')`.
+  Adjacent overwritten message literals without comments are removed. Retained repeated nonempty
+  messages use `withMessage($message, exact: false)`; a string variable whose emptiness is unknown
+  uses `withMessage($message, exact: $message === '')`. Other expressions use
+  `withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($expression))`
+  to evaluate and coerce the argument once before selecting the mode. The named `exact` key makes
+  older Assert versions fail explicitly instead of ignoring a positional flag. See the README's
+  generated-code compatibility requirements. Named source parameters are validated and emitted
+  positionally. Across assignments a fresh local holds the
   handler, keeping registration and argument snapshots at the original statements. Other statements
   end the run. Message and regex expectations retain independent fields, including dynamic and
-  repeated messages. Variable variables prevent introducing a handler local.
+  repeated messages. Handler names are reserved across the containing function, including conditional
+  and later locals. Variable variables or locals introduced by `extract()` prevent introducing a
+  handler local. Assignments can throw,
+  so handler registration remains at its original statement.
   A bare message/code with no preceding class expectation remains manual.
 - **GroupToTestoRector** (registered) — collapses every PHPUnit group source on a node — the
   `@group` docblock annotation(s) **and** the repeatable single-name `#[Group]` attribute(s) — into

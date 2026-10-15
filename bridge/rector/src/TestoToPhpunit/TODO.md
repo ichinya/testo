@@ -47,6 +47,8 @@ directory but are **not** registered in `config/testo-to-phpunit.php`.
   A literal `withMessage('value', exact: false)` maps to `expectExceptionMessage`; an empty substring
   maps to the always-matching `expectExceptionMessageMatches('~~')`. Dynamic comparison modes or
   unpacked arguments stay manual so their empty-string semantics and evaluations are not lost.
+  Repeated `withMessage()` calls also stay manual, even when their modes map to different PHPUnit
+  methods: they replace one Testo field rather than establishing independent constraints.
 - **`ExpectExceptionAttributeToPhpUnitRector`** (registered) — converts the attribute form
   `#[\Testo\Assert\ExpectException($class)]` into a `$this->expectException($class);` statement
   prepended to the method body (PHPUnit dropped its `ExpectException` attribute, leaving only the

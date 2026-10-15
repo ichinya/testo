@@ -20,7 +20,7 @@ class FoldAcrossAssignmentTest
     {
         $testoExpectedException = \Testo\Expect::exception(\InvalidArgumentException::class);
         $message = 'Type "float" is not supported. The valid types are: ' . self::TYPES . '.';
-        $testoExpectedException->withMessage(...(static fn(string $message): array => [$message, $message === ''])($message));
+        $testoExpectedException->withMessageContaining($message);
 
         new Compare(type: 'float');
     }

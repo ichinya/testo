@@ -24,11 +24,11 @@ class IndependentDynamicConstraints
 {
     public function repeatedMessageAndPattern(): void
     {
-        \Testo\Expect::exception(\Throwable::class)->withMessage('old', exact: false)->withMessageMatchingRegex('~two~')->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->message()));
+        \Testo\Expect::exception(\Throwable::class)->withMessage('old', exact: false)->withMessageMatchingRegex('~two~')->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->message()));
     }
 
     public function dynamicMessageAndPattern(): void
     {
-        \Testo\Expect::exception(\Throwable::class)->withMessage(...(static fn(string $message): array => [$message, $message === ''])($this->message()))->withMessageMatchingRegex('~two~');
+        \Testo\Expect::exception(\Throwable::class)->withMessage(...(static fn(string $message): array => [$message, 'exact' => $message === ''])($this->message()))->withMessageMatchingRegex('~two~');
     }
 }

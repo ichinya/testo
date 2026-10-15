@@ -115,16 +115,23 @@ final class ExpectExceptionToPhpUnitRector extends AbstractRector
 
         $stmts = [$this->expectStmt('expectException', [$this->arg($headArg->value)])];
         $emitted = [];
+        $hasMessage = false;
 
         foreach (\array_reverse($links) as $link) {
             $modifier = $this->getName($link->name);
+            if ($modifier === 'withMessage') {
+                if ($hasMessage) {
+                    return null;
+                }
+                $hasMessage = true;
+            }
             $mapped = $modifier === null ? null : $this->mapModifier($modifier, $link->args);
             if ($mapped === null) {
                 # Any unmapped modifier aborts the whole conversion — never half-convert.
                 return null;
             }
 
-            # A repeated PHPUnit expectation overrides the earlier one, while Testo checks both.
+            # Independent Testo constraints must not collapse onto one replaceable PHPUnit field.
             \assert($mapped->expr instanceof MethodCall);
             $method = (string) $this->getName($mapped->expr->name);
             if (isset($emitted[$method])) {
