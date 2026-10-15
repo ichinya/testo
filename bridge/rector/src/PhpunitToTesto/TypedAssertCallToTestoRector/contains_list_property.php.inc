@@ -20,8 +20,12 @@ class ContainsListPropertyTest
 {
     public function test()
     {
-        \Testo\Assert::string($haystack)->contains('needle');
-        \Testo\Assert::string($output)->notContains('error', 'no errors');
+        (static function (string $needle, string $haystack, string $message = ''): void {
+            \Testo\Assert::string($haystack)->contains($needle, $message);
+        })('needle', $haystack);
+        (static function (string $needle, string $haystack, string $message = ''): void {
+            \Testo\Assert::string($haystack)->notContains($needle, $message);
+        })('error', $output, 'no errors');
         \Testo\Assert::iterable($items)->notContains($removed);
         \Testo\Assert::iterable($letters)->notContains('x', 'x is gone');
         \Testo\Assert::object($entity)->hasProperty('id', 'has an id');
