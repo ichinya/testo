@@ -12,6 +12,12 @@ class ContainsListPropertyTest
         $this->assertIsList($rows);
         $this->assertIsList($rows, 'sequential keys');
     }
+
+    public function namedArguments(string $needle, string $haystack): void
+    {
+        $this->assertStringContainsString(needle: 'needle', haystack: 'haystack');
+        $this->assertStringContainsString(haystack: $haystack, needle: $needle);
+    }
 }
 -----
 <?php
@@ -31,5 +37,11 @@ class ContainsListPropertyTest
         \Testo\Assert::object($entity)->hasProperty('id', 'has an id');
         \Testo\Assert::array($rows)->isList();
         \Testo\Assert::array($rows)->isList('sequential keys');
+    }
+
+    public function namedArguments(string $needle, string $haystack): void
+    {
+        \Testo\Assert::string('haystack')->contains('needle');
+        \Testo\Assert::string($haystack)->contains($needle);
     }
 }

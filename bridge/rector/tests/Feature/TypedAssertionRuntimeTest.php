@@ -50,8 +50,7 @@ final class TypedAssertionRuntimeTest
      */
     private function assertFixture(string $name, array $expected): void
     {
-        $file = \dirname(__DIR__, 2) . '/src/PhpunitToTesto/TypedAssertCallToTestoRector/' . $name . '.php.inc';
-        [$input] = \explode("-----\n", \str_replace("\r\n", "\n", (string) \file_get_contents($file)), 2);
+        $input = (string) \file_get_contents(__DIR__ . '/Fixture/' . $name . '.php.inc');
         $runner = new RectorRunner(new RecordingMessenger(), [], [TestoRectorSetList::PHPUNIT_TO_TESTO]);
         $converted = $runner->convert($input);
         $actual = ConvertedRuntime::run($converted);
